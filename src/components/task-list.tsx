@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import { LoadingState } from "@/components/loading-state";
+import { getErrorMessage } from "@/lib/error-messages";
 import type { Task } from "@/server/schemas";
 import { useTRPC } from "@/trpc/client";
 
@@ -22,12 +23,16 @@ export function TaskList() {
   const trpc = useTRPC();
   // The data is hydrated from the server (see app/page.tsx), so `isPending`
   // is only true when that prefetch did not make it to the client.
-  const { data, isPending, isError, isFetching, refetch } = useQuery(
+  const { data, error, isPending, isError, isFetching, refetch } = useQuery(
     trpc.task.list.queryOptions(),
   );
 
   if (isPending) return <LoadingState />;
-  if (isError) return <ErrorState onRetry={() => refetch()} />;
+  if (isError) {
+    return (
+      <ErrorState message={getErrorMessage(error)} onRetry={() => refetch()} />
+    );
+  }
 
   if (data.length === 0) {
     return (
@@ -68,10 +73,7 @@ function TaskItem({ task }: { task: Task }) {
         );
         toast.success("Tarefa excluída com sucesso");
       },
-      // Provisional generic message; task 08 replaces it with the shared
-      // backend-error translation.
-      onError: () =>
-        toast.error("Não foi possível excluir a tarefa. Tente novamente."),
+      onError: (error) => toast.error(getErrorMessage(error)),
       // Runs on failure too, so a task that was already deleted elsewhere
       // (NOT_FOUND) also disappears from the list. Returning the promise keeps
       // the button disabled until the refetch finishes.

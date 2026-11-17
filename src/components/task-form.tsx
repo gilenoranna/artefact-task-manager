@@ -7,6 +7,11 @@ import { useId, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { toast } from "sonner";
 import type { Task } from "@/server/schemas";
+import {
+  getErrorMessage,
+  getFieldErrors,
+  TITLE_REQUIRED_MESSAGE,
+} from "@/lib/error-messages";
 import { useTRPC } from "@/trpc/client";
 
 type TaskFormProps = {
@@ -14,10 +19,6 @@ type TaskFormProps = {
   // Absent when creating a new task.
   task?: Task;
 };
-
-// Provisional generic message; task 08 replaces it with the shared
-// backend-error translation.
-const SAVE_ERROR_MESSAGE = "Não foi possível salvar a tarefa. Tente novamente.";
 
 // One form for both modes, so the fields and the validation live in one place.
 export function TaskForm({ task }: TaskFormProps) {
@@ -43,6 +44,19 @@ export function TaskForm({ task }: TaskFormProps) {
     router.push("/");
   }
 
+  // Shared by both mutations. A title error from the backend goes under the
+  // field (no toast, so the same problem is not reported twice); anything
+  // else is shown as a toast.
+  function handleSaveError(error: unknown) {
+    const { title: fieldError } = getFieldErrors(error);
+    if (fieldError) {
+      setTitleError(fieldError);
+      titleRef.current?.focus();
+      return;
+    }
+    toast.error(getErrorMessage(error));
+  }
+
   // Hooks cannot be conditional, so both mutations are declared and the one
   // that matches the mode is picked below.
   const createTask = useMutation(
@@ -54,7 +68,7 @@ export function TaskForm({ task }: TaskFormProps) {
         queryClient.setQueryData(listKey, (old) => old && [created, ...old]);
         finish("Tarefa criada com sucesso");
       },
-      onError: () => toast.error(SAVE_ERROR_MESSAGE),
+      onError: handleSaveError,
     }),
   );
   const updateTask = useMutation(
@@ -65,7 +79,7 @@ export function TaskForm({ task }: TaskFormProps) {
         );
         finish("Tarefa atualizada com sucesso");
       },
-      onError: () => toast.error(SAVE_ERROR_MESSAGE),
+      onError: handleSaveError,
     }),
   );
 
@@ -81,7 +95,7 @@ export function TaskForm({ task }: TaskFormProps) {
     // The backend validates again (it is the one that can be trusted); this
     // check only saves a round trip and gives immediate feedback.
     if (title.trim() === "") {
-      setTitleError("O título é obrigatório");
+      setTitleError(TITLE_REQUIRED_MESSAGE);
       titleRef.current?.focus();
       return;
     }
