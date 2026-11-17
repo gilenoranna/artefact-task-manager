@@ -1,7 +1,8 @@
 import { z } from "zod";
 
-// Shared with the frontend (forms import these types and schemas), so this
-// file must stay free of server-only code and Node APIs.
+// The frontend imports its types from here. This file stays free of
+// server-only code and Node APIs so that a future value import (e.g. reusing a
+// schema in the form) cannot break the client bundle.
 
 export const taskSchema = z.object({
   // Not `z.uuid()`: an unknown id such as "abc" must reach the router and
