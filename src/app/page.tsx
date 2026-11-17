@@ -1,7 +1,3 @@
 export default function Home() {
-  return (
-    <main>
-      <h1>Gerenciador de Tarefas</h1>
-    </main>
-  );
+  return <h1 className="text-2xl font-semibold">Tarefas</h1>;
 }
