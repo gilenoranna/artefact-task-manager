@@ -1,12 +1,19 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import Link from "next/link";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
+import { InfiniteScrollFooter } from "@/components/infinite-scroll-footer";
 import { LoadingState } from "@/components/loading-state";
 import { getErrorMessage } from "@/lib/error-messages";
+import { removeTask } from "@/lib/task-pages";
+import type { TaskPages } from "@/lib/task-pages";
 import type { Task } from "@/server/schemas";
 import { useTRPC } from "@/trpc/client";
 
@@ -21,20 +28,41 @@ const dateFormatter = new Intl.DateTimeFormat("pt-BR", {
 
 export function TaskList() {
   const trpc = useTRPC();
-  // The data is hydrated from the server (see app/page.tsx), so `isPending`
-  // is only true when that prefetch did not make it to the client.
-  const { data, error, isPending, isError, isFetching, refetch } = useQuery(
-    trpc.task.list.queryOptions(),
+  // The first page is hydrated from the server (see app/page.tsx), so
+  // `isPending` is only true when that prefetch did not make it to the client.
+  // The input and `getNextPageParam` must match the prefetch's.
+  const {
+    data,
+    error,
+    isPending,
+    isError,
+    isFetching,
+    isFetchingNextPage,
+    isFetchNextPageError,
+    hasNextPage,
+    fetchNextPage,
+    refetch,
+  } = useInfiniteQuery(
+    trpc.task.list.infiniteQueryOptions(
+      {},
+      { getNextPageParam: (lastPage) => lastPage.nextCursor },
+    ),
   );
 
   if (isPending) return <LoadingState />;
-  if (isError) {
+  // A failed "next page" is not handled here: the tasks already loaded stay on
+  // screen and the footer shows the error. `!data` is the initial-load failure
+  // (and narrows the type); any other failure, such as a refetch, replaces the
+  // list.
+  if (!data || (isError && !isFetchNextPageError)) {
     return (
       <ErrorState message={getErrorMessage(error)} onRetry={() => refetch()} />
     );
   }
 
-  if (data.length === 0) {
+  const tasks = data.pages.flatMap((page) => page.items);
+
+  if (tasks.length === 0) {
     return (
       <EmptyState>
         <Link href="/tasks/new" className="btn btn-primary">
@@ -47,20 +75,32 @@ export function TaskList() {
   // The list stays on screen while refetching (e.g. after a delete) instead of
   // being swapped for a loading state, so it does not flash.
   return (
-    <ul aria-busy={isFetching} className="flex flex-col gap-3">
-      {data.map((task) => (
-        <li key={task.id}>
-          <TaskItem task={task} />
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul aria-busy={isFetching} className="flex flex-col gap-3">
+        {tasks.map((task) => (
+          <li key={task.id}>
+            <TaskItem task={task} />
+          </li>
+        ))}
+      </ul>
+      <InfiniteScrollFooter
+        hasNextPage={hasNextPage}
+        isFetching={isFetching}
+        isFetchingNextPage={isFetchingNextPage}
+        isError={isFetchNextPageError}
+        errorMessage={getErrorMessage(error)}
+        onLoadMore={fetchNextPage}
+      />
+    </>
   );
 }
 
 function TaskItem({ task }: { task: Task }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
-  const listKey = trpc.task.list.queryKey();
+  // A filter (matches by prefix) instead of an exact key, so it finds the list
+  // whatever input it was fetched with.
+  const listFilter = trpc.task.list.infiniteQueryFilter();
 
   // One mutation per row: only this row's button is disabled while it runs,
   // and several rows can be deleted at the same time.
@@ -68,8 +108,8 @@ function TaskItem({ task }: { task: Task }) {
     trpc.task.delete.mutationOptions({
       onSuccess: () => {
         // Remove the row right away; the refetch in `onSettled` confirms it.
-        queryClient.setQueryData(listKey, (old) =>
-          old?.filter((item) => item.id !== task.id),
+        queryClient.setQueriesData<TaskPages>(listFilter, (old) =>
+          removeTask(old, task.id),
         );
         toast.success("Tarefa excluída com sucesso");
       },
@@ -77,7 +117,7 @@ function TaskItem({ task }: { task: Task }) {
       // Runs on failure too, so a task that was already deleted elsewhere
       // (NOT_FOUND) also disappears from the list. Returning the promise keeps
       // the button disabled until the refetch finishes.
-      onSettled: () => queryClient.invalidateQueries({ queryKey: listKey }),
+      onSettled: () => queryClient.invalidateQueries(listFilter),
     }),
   );
 

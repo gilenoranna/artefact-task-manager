@@ -8,13 +8,21 @@ import { getQueryClient, trpc } from "@/trpc/server";
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  // The list is fetched on the server and handed to the client through
-  // hydration: the first HTML already contains the tasks (real SSR) and the
-  // browser does not need an extra request when the page loads. The awaited
+  // The first page of the list is fetched on the server and handed to the
+  // client through hydration: the first HTML already contains the tasks (real
+  // SSR) and the browser does not need an extra request when the page loads.
+  // The next pages are loaded by the client as the user scrolls. The awaited
   // prefetch is what makes this work; the 30s staleTime (see query-client.ts)
   // keeps the client from refetching the hydrated data right away.
+  // The input and `getNextPageParam` must match the ones in TaskList: they
+  // produce the query key, and a different key means the data is not hydrated.
   const queryClient = getQueryClient();
-  await queryClient.prefetchQuery(trpc.task.list.queryOptions());
+  await queryClient.prefetchInfiniteQuery(
+    trpc.task.list.infiniteQueryOptions(
+      {},
+      { getNextPageParam: (lastPage) => lastPage.nextCursor },
+    ),
+  );
 
   return (
     <HydrationBoundary state={dehydrate(queryClient)}>

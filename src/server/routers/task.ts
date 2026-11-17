@@ -1,5 +1,10 @@
 import { TRPCError } from "@trpc/server";
-import { createTaskInput, taskIdInput, updateTaskInput } from "../schemas";
+import {
+  createTaskInput,
+  listTasksInput,
+  taskIdInput,
+  updateTaskInput,
+} from "../schemas";
 import {
   createTask,
   deleteTask,
@@ -22,7 +27,10 @@ function taskNotFound(id: string) {
 }
 
 export const taskRouter = router({
-  list: publicProcedure.query(() => listTasks()),
+  // One page at a time (newest first); see `listTasksInput` for the cursor.
+  list: publicProcedure
+    .input(listTasksInput)
+    .query(({ input }) => listTasks(input)),
 
   // Not one of the four CRUD operations: it lets the edit page load a single
   // task without fetching the whole list.

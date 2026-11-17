@@ -27,7 +27,24 @@ export const updateTaskInput = taskSchema.pick({
 
 export const taskIdInput = taskSchema.pick({ id: true });
 
+// Pagination is keyset-based: the cursor is the position (`createdAt` + `id`)
+// of the last task already delivered, not a reference that must still exist.
+// So it keeps working when that task is deleted while the user scrolls.
+export const taskCursorSchema = taskSchema.pick({ id: true, createdAt: true });
+
+// Deliberately not `.strict()`: the tRPC client adds a `direction` field to
+// every infinite query input, and it only sends `cursor` after the first page
+// (hence `nullish`).
+export const listTasksInput = z.object({
+  limit: z.number().int().min(1).max(50).default(10),
+  cursor: taskCursorSchema.nullish(),
+});
+
 export type Task = z.infer<typeof taskSchema>;
+export type TaskCursor = z.infer<typeof taskCursorSchema>;
+export type ListTasksInput = z.infer<typeof listTasksInput>;
+// `nextCursor` is null on the last page.
+export type TaskPage = { items: Task[]; nextCursor: TaskCursor | null };
 export type CreateTaskInput = z.infer<typeof createTaskInput>;
 export type UpdateTaskInput = z.infer<typeof updateTaskInput>;
 export type TaskIdInput = z.infer<typeof taskIdInput>;

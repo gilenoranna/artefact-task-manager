@@ -1,7 +1,14 @@
 import "server-only"; // ensures this file is never imported from the client
 
 import { randomUUID } from "node:crypto";
-import type { CreateTaskInput, Task, UpdateTaskInput } from "../schemas";
+import type {
+  CreateTaskInput,
+  ListTasksInput,
+  Task,
+  TaskCursor,
+  TaskPage,
+  UpdateTaskInput,
+} from "../schemas";
 
 // Plain data functions with no knowledge of tRPC. "Not found" is reported
 // through the return values; the router decides which error to raise.
@@ -18,6 +25,11 @@ function createSeed(): Map<string, Task> {
       title: "Preparar a demonstração",
       description: "Criar, editar e excluir tarefas de exemplo.",
     },
+    // Enough extra (fictional) tasks to span several pages and make the
+    // infinite scroll visible.
+    ...Array.from({ length: 30 }, (_, index) => ({
+      title: `Tarefa de exemplo ${String(index + 1).padStart(2, "0")}`,
+    })),
   ];
 
   // Staggered timestamps so "newest first" is a real, deterministic order.
@@ -46,8 +58,37 @@ function normalizeDescription(description: string | undefined) {
   return description || undefined;
 }
 
-export function listTasks(): Task[] {
-  return Array.from(tasks.values()).sort((a, b) => b.createdAt - a.createdAt);
+// Newest first. `id` breaks ties, so two tasks created in the same millisecond
+// still have one fixed order (the cursor relies on a total order). Ids are
+// compared with `<`/`>` in both places below so they always agree.
+function compareNewestFirst(a: Task, b: Task) {
+  if (a.createdAt !== b.createdAt) return b.createdAt - a.createdAt;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+// True when `task` comes after the cursor position in `compareNewestFirst`.
+function isAfter(task: Task, cursor: TaskCursor) {
+  if (task.createdAt !== cursor.createdAt) {
+    return task.createdAt < cursor.createdAt;
+  }
+  return task.id > cursor.id;
+}
+
+export function listTasks({ limit, cursor }: ListTasksInput): TaskPage {
+  const sorted = Array.from(tasks.values()).sort(compareNewestFirst);
+  // Filtering by position (not looking the cursor task up) means a cursor
+  // whose task was deleted in the meantime still points at the right place.
+  const remaining = cursor ? sorted.filter((t) => isAfter(t, cursor)) : sorted;
+  const items = remaining.slice(0, limit);
+
+  // There is a next page only if something is left after this one.
+  const last = items.at(-1);
+  const nextCursor =
+    last && remaining.length > limit
+      ? { id: last.id, createdAt: last.createdAt }
+      : null;
+
+  return { items, nextCursor };
 }
 
 export function getTask(id: string): Task | undefined {

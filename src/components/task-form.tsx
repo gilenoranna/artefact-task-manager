@@ -12,6 +12,8 @@ import {
   getFieldErrors,
   TITLE_REQUIRED_MESSAGE,
 } from "@/lib/error-messages";
+import { prependTask, replaceTask } from "@/lib/task-pages";
+import type { TaskPages } from "@/lib/task-pages";
 import { useTRPC } from "@/trpc/client";
 
 type TaskFormProps = {
@@ -25,7 +27,8 @@ export function TaskForm({ task }: TaskFormProps) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const router = useRouter();
-  const listKey = trpc.task.list.queryKey();
+  // Matches the list by prefix, whatever input it was fetched with.
+  const listFilter = trpc.task.list.infiniteQueryFilter();
 
   const [title, setTitle] = useState(task?.title ?? "");
   const [description, setDescription] = useState(task?.description ?? "");
@@ -39,7 +42,7 @@ export function TaskForm({ task }: TaskFormProps) {
   // Runs after either mutation succeeds. The list is invalidated so it is
   // refetched, and the redirect goes back to it.
   function finish(message: string) {
-    queryClient.invalidateQueries({ queryKey: listKey });
+    queryClient.invalidateQueries(listFilter);
     toast.success(message);
     router.push("/");
   }
@@ -65,7 +68,9 @@ export function TaskForm({ task }: TaskFormProps) {
         // Show the result on the list right away: the page we are going back
         // to only replaces the cached list after it renders, which would
         // otherwise flash the old one. Newest first, like the server.
-        queryClient.setQueryData(listKey, (old) => old && [created, ...old]);
+        queryClient.setQueriesData<TaskPages>(listFilter, (old) =>
+          prependTask(old, created),
+        );
         finish("Tarefa criada com sucesso");
       },
       onError: handleSaveError,
@@ -74,8 +79,8 @@ export function TaskForm({ task }: TaskFormProps) {
   const updateTask = useMutation(
     trpc.task.update.mutationOptions({
       onSuccess: (updated) => {
-        queryClient.setQueryData(listKey, (old) =>
-          old?.map((item) => (item.id === updated.id ? updated : item)),
+        queryClient.setQueriesData<TaskPages>(listFilter, (old) =>
+          replaceTask(old, updated),
         );
         finish("Tarefa atualizada com sucesso");
       },
