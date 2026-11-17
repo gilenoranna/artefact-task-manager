@@ -1,8 +1,8 @@
-import { publicProcedure, router } from "../trpc";
+import { router } from "../trpc";
+import { taskRouter } from "./task";
 
 export const appRouter = router({
-  // Temporary health check used to validate the tRPC setup.
-  ping: publicProcedure.query(() => ({ ok: true })),
+  task: taskRouter,
 });
 
 // Exported so the client can infer end-to-end types without importing server code.
